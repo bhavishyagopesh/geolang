@@ -1,0 +1,537 @@
+#!/usr/bin/env python
+from lark import Lark
+
+geolang_grammar = """
+    start: instruction+
+
+    instruction: "NUMBER" LNID  NID              -> number 
+               | "POINT" PID NID NID             -> point 
+               | "LINE"  LID PID PID             -> line  
+               | "CIRCLE" CID PID NID            -> circle
+               | "INTERSECT" GID GID GID         -> intersect  
+               | "MIDPOINT" GID GID GID          -> midpoint 
+               | "MEDIAN"   PID PID              -> median 
+               | "PERPENDICULAR" PID LID         -> perpendicular 
+               | "GETX" PID PID                  -> getx 
+               | "GETY" PID PID                  -> gety 
+               | "DISTANCE" PID PID PID          -> distance 
+               | "AREA" PID SHAPE NID+           -> area 
+               | "PERIMETER" PID SHAPE NID+      -> perimeter
+               | "PRINT"                         -> print  
+               | "HELP"                          -> help 
+               | "CREDITS"                       -> credits 
+               | "DESIGN"                        -> design 
+               | "COPYRIGHT"                     -> copyright 
+    
+   
+
+    LNID: LETTER+
+    NID: INT "." INT? 
+       | "." INT | INT
+    PID: LETTER+
+    LID: LETTER+
+    CID: LETTER+
+    GID: LETTER+
+
+    SHAPE: "SCALENE" | "EQUILATERAL" | "RIGHT_ANGLED" | "ISOSCELES" | "SQUARE" | "RECTANGLE" | "PARALLELOGRAM" | "RHOMBUS" | "TRAPEZIUM" 
+     
+    %import common.INT 
+    %import common.LETTER
+    %import common.DECIMAL
+    %import common.WS 
+    %ignore WS
+    
+    """
+
+parser = Lark(geolang_grammar)
+
+# This is the global_dict -- on lines of a lookup table
+global_dict = dict() 
+
+def run_instructions(t):
+    if t.data == 'number':
+        var, val = t.children
+        from sympy import symbols 
+        num_var = symbols(var)
+        num_val = float(val)
+
+        global_dict[num_var] = num_val
+        print("{} = {}".format(num_var, num_val))
+    
+    elif t.data == 'point':
+        var_point, val_x, val_y = t.children 
+        from sympy import symbols
+        from sympy.geometry import Point
+
+        point_var = symbols(var_point)
+        val_x, val_y = float(val_x), float(val_y)
+        point_var = Point(val_x, val_y)
+        point_var_name = symbols(var_point)
+
+        global_dict[point_var_name] = (point_var, val_x, val_y)
+        print("{}: Point({}->({}, {}))".format(point_var, point_var_name, val_x, val_y))
+
+    elif t.data == 'line':
+        var_line, val_point1, val_point2 =  t.children
+        from sympy import symbols
+        from sympy.geometry import Point, Line
+        
+        point1, point2 = symbols(val_point1), symbols(val_point2)
+
+        if point1 in global_dict and point2 in global_dict:
+           line_var = Line(global_dict[point1][0], global_dict[point2][0])
+           line_var_name = symbols(var_line)
+           
+           global_dict[line_var_name] = (line_var, global_dict[point1][0], global_dict[point2][0])
+           print("{}: Line({}->({}, {}))".format(line_var, line_var_name, point1, point2))
+        else:
+           print("Such points don't exist")
+
+    elif t.data == 'circle':
+       var_circle, val_centre, val_radius = t.children
+       from sympy import symbols
+       from sympy.geometry import Point, Circle
+         
+       centre = symbols(val_centre)
+       radius  = float(val_radius)
+       if centre in global_dict:
+          circle_var = Circle(global_dict[centre][0], radius)
+          circle_var_name = symbols(var_circle)
+
+          global_dict[circle_var_name] = (circle_var, global_dict[centre][0], radius)
+          print("{}: Circle({}->({}, {}))".format(circle_var, circle_var_name, centre, radius))
+       
+    elif t.data == 'intersect':
+       val1, val2, val3 = t.children
+       from sympy import symbols
+       from sympy.geometry import Point, Circle, Line, line 
+
+       val1, val2, val3 = symbols(val1), symbols(val2), symbols(val3)
+       if type(global_dict[val2][0])==line.Line2D and type(global_dict[val3][0])==line.Line2D:
+          l1, l2 = global_dict[val2][0], global_dict[val3][0]
+          global_dict[val1] = l1.intersection(l2)
+          print(l1.intersection(l2))
+       else:
+         print("invalid args")
+   
+    elif t.data == 'midpoint':
+
+       val1, val2, val3 = t.children
+       from sympy import symbols
+       from sympy.geometry import Point, Line, line, point 
+
+       val1, val2, val3 = symbols(val1), symbols(val2), symbols(val3)
+       if type(global_dict[val2][0])==point.Point2D and type(global_dict[val3][0])==point.Point2D:
+
+          p1, p2 = global_dict[val2][0], global_dict[val3][0]
+          
+          global_dict[val1] = p1.midpoint(p2)
+          print(p1.midpoint(p2))
+       else:
+          print("invalid args")
+
+    elif t.data == 'getx':
+       val1, val2 = t.children
+       from sympy import symbols
+       from sympy.geometry import point
+       
+       val1, val2 = symbols(val1), symbols(val2)
+       
+
+       if type(global_dict[val2][0]==point.Point2D):
+          global_dict[val1] = global_dict[val2][1]
+          print("{} = {}".format(val1, global_dict[val1]))
+       else:
+          print("invalid args")
+   
+    elif t.data == 'gety':
+       val1, val2 = t.children
+       from sympy import symbols
+       from sympy.geometry import point
+       
+       val1, val2 = symbols(val1), symbols(val2)
+
+
+       if type(global_dict[val2][0]==point.Point2D):
+          global_dict[val1] = global_dict[val2][2]
+          print("{} = {}".format(val1, global_dict[val1]))
+       else:
+          print("invalid args")
+    
+    elif t.data == 'distance':
+       val1, val2, val3 = t.children
+       from sympy import symbols, N
+       from sympy.geometry import point, line, Point, Line
+
+       val1, val2, val3 = symbols(val1), symbols(val2), symbols(val3)
+
+       if type(global_dict[val2][0])==point.Point2D and type(global_dict[val3][0])==point.Point2D:
+          p1, p2 = global_dict[val2][0], global_dict[val3][0]
+          global_dict[val1] = p1.distance(p2)
+          print("{} = {}".format(val1, N(global_dict[val1])))
+       elif type(global_dict[val2][0])==point.Point2D and type(global_dict[val3][0])==line.Line2D:
+          p = global_dict[val2][0]
+          l = global_dict[val3][0]
+
+          global_dict[val1] = l.distance(p)
+          print("{} = {}".format(val1, N(global_dict[val1])))
+       else:
+          print("invalid args")
+       
+    elif t.data == 'area' :
+       val1, val2, *val3 = t.children
+       from sympy import symbols
+       val1 = symbols(val1)
+       if val2 == "SCALENE":
+          if len(val3) == 3:
+             try:
+               _a, _b, _c = float(val3[0]), float(val3[1]), float(val3[2])
+               if not ((_a+_b>_c) and  (_a+_c>_b) and  (_b+_c>_a)):
+                  raise Exception("Invalid triangle")
+               _s = (_a+_b+_c)/2
+               _t = (_s*(_s-_a)*(_s-_b)*(_s-_c))**(.5)
+               global_dict[val1] = _t
+               print("{} = {}".format(val1, global_dict[val1]))
+               
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "EQUILATERAL":
+          if len(val3) == 1:
+             try:
+                _a = float(val3[0])
+                if (_a<=0):
+                   raise Exception("Invalid triangle")
+                _t = (((3)**.5)/4)*_a*_a
+                global_dict[val1] = _t
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "RIGHT_ANGLED":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if (_a <= 0) or (_b<=0):
+                   raise Exception("Invalid triangle")
+                _t = (.5)*_a*_b
+                global_dict[val1] = _t 
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "ISOSCELES":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if (_a <= 0) or (_b<=0):
+                   raise Exception("Invalid triangle")
+                _s = (_a*2+_b)/2
+                _t = (_s*(_s-_a)*(_s-_b)*(_s-_a))**(.5)
+                global_dict[val1] = _t 
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       
+       elif val2 == "SQUARE":
+          if len(val3) == 1:
+             try:
+                _a = float(val3[0])
+                if _a <= 0:
+                   raise Exception("Invalid square")
+
+                global_dict[val1] = _a*_a
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "RECTANGLE":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if _a <= 0 or _b<=0:
+                   raise Exception("Invalid rectangle")
+
+                global_dict[val1] = _a*_b
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "PARALLELOGRAM":
+          if len(val3) == 2:
+             try:
+                _a, _h = float(val3[0]), float(val3[1])
+                if _a <= 0 or _h<=0:
+                   raise Exception("Invalid parallelogram")
+
+                global_dict[val1] = _a*_h
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "RHOMBUS":
+          if len(val3) == 2:
+             try:
+                _d1, _d2 = float(val3[0]), float(val3[1])
+                if _d1 <= 0 or _d2<=0:
+                   raise Exception("Invalid rhombus")
+
+                global_dict[val1] = _d1*_d2*(.5)
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "TRAPEZIUM":
+          if len(val3) == 3:
+             try:
+                _a, _b, _h = float(val3[0]), float(val3[1]), float(val3[2])
+                if _a <= 0 or _b<=0 or _h<=0:
+                   raise Exception("Invalid trapezium")
+
+                global_dict[val1] = (.5)*(_a+_b)*(_h)
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+        
+    elif t.data == 'perimeter' :
+       val1, val2, *val3 = t.children
+       from sympy import symbols
+       val1 = symbols(val1)
+       if val2 == "SCALENE":
+          if len(val3) == 3:
+             try:
+               _a, _b, _c = float(val3[0]), float(val3[1]), float(val3[2])
+               if not ((_a+_b>_c) and  (_a+_c>_b) and  (_b+_c>_a)):
+                  raise Exception("Invalid triangle")
+               global_dict[val1] = (_a+_b+_c)
+               print("{} = {}".format(val1, global_dict[val1]))
+               
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "EQUILATERAL":
+          if len(val3) == 1:
+             try:
+                _a = float(val3[0])
+                if (_a<=0):
+                   raise Exception("Invalid triangle")
+                global_dict[val1] = _a*3
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "RIGHT_ANGLED":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if (_a <= 0) or (_b<=0):
+                   raise Exception("Invalid triangle")
+                global_dict[val1] = _a + _b + ((_a*_a + _b*_b)**(.5))
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       elif val2 == "ISOSCELES":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if (_a <= 0) or (_b<=0):
+                   raise Exception("Invalid triangle")
+                global_dict[val1] = _a*2 + _b
+                print("{} = {}".format(val1, global_dict[val1]))
+
+             except Exception as e:
+                print(e)
+          else:
+             print("Invalid args")
+       
+       elif val2 == "SQUARE":
+          if len(val3) == 1:
+             try:
+                _a = float(val3[0])
+                if _a <= 0:
+                   raise Exception("Invalid square")
+
+                global_dict[val1] = _a*4
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "RECTANGLE":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if _a <= 0 or _b<=0:
+                   raise Exception("Invalid rectangle")
+
+                global_dict[val1] = (_a+_b)*2
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "PARALLELOGRAM":
+          if len(val3) == 2:
+             try:
+                _a, _b = float(val3[0]), float(val3[1])
+                if _a <= 0 or _b<=0:
+                   raise Exception("Invalid parallelogram")
+
+                global_dict[val1] = (_a+_b)*2
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "RHOMBUS":
+          if len(val3) == 1:
+             try:
+                _a = float(val3[0])
+                if _a <= 0:
+                   raise Exception("Invalid rhombus")
+
+                global_dict[val1] = _a*4
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")
+       elif val2 == "TRAPEZIUM":
+          if len(val3) == 4:
+             try:
+                _a, _b, _c, _d = float(val3[0]), float(val3[1]), float(val3[2]), float(val3[3])
+                if _a <= 0 or _b<=0 or _c<=0 or _d<=0:
+                   raise Exception("Invalid trapezium")
+
+                global_dict[val1] = _a+_b+_c+_d 
+                print("{} = {}".format(val1, global_dict[val1]))
+             except Exception as e:
+                print(e)
+                
+          else:
+             print("Invalid args")    
+
+
+    elif t.data == 'print':
+        print(global_dict)
+
+    elif t.data == 'help':
+       man = """
+       The syntax of Geolang is as follows:
+       `NUMBER`    $ret_var decimal_arg                         To set numerical variable
+       `POINT`     $ret_var decimal_arg decimal_arg             To set 2DPoint
+       `LINE`      $ret_var point_arg point_arg                 To set 2DLine
+       `CIRCLE`    $ret_var point_arg decimal_arg{radius}       To set 2DCircle
+       `INTERSECT` $ret_var gentity_arg gentity_arg             To find intersection of two gentities
+       `MIDPOINT`  $ret_var (point_arg point_arg) | (line_arg)  To find midpoint of two point or a line 
+       `GETX`      $ret_var point_arg                           To get X coordinate of point   
+       `GETY`      $ret_var point_arg                           To get Y coordinate of point
+       `DISTANCE`  $ret_var gentity_arg gentity_arg             To get distance b/w two gentities  
+       `AREA`      $ret_var shape_arg *decimal_arg              To find area of a shape
+       `PERIMETER` $ret_var shape_arg *decimal_arg              To find perimeter of a shape
+       `PRINT`                                                  To print the present global_dict
+       
+       Def:
+       -- gentity: A basic geometrical entity like point, line, circle 
+       -- global_dict: The global lookup table containing all variables in one interpreter run 
+       -- shape_arg: One among "SCALENE" | "EQUILATERAL" | "RIGHT_ANGLED" | "ISOSCELES" | "SQUARE" | "RECTANGLE" | "PARALLELOGRAM" | "RHOMBUS" | "TRAPEZIUM"
+       
+       """
+       print(man)
+
+    elif t.data == 'credits':
+       credits = """
+       Mentors: Prof. Amey Karkare and Prof. Arnab Bhattacharya
+       
+       Geometric Engine: sympy(http://docs.sympy.org/latest/index.html)
+
+       """
+       print(credits)
+    
+    elif t.data == 'design':
+       design = """
+       Soon to be ADDED
+       """
+       print(design)
+    elif t.data == 'copyright':
+       copyright = """
+       DO WHATEVER YOU WANT TO WITH THE SOURCE. 
+       """
+       print(copyright)
+
+    else:
+        raise SyntaxError('Unknown instruction: %s' % t.data)
+
+def run_program(program):
+    parse_tree = parser.parse(program)
+    for inst in parse_tree.children:
+        run_instructions(inst)
+
+
+# Handle SIGINT gracefully 
+import signal
+def sigint_handler(signum, frame):
+   print("\nYou pressed CTRL+C...geolang exiting...\n")
+   import os
+   os._exit(0)
+
+signal.signal(signal.SIGINT, sigint_handler)
+
+
+
+def main():
+
+   info = """
+   Welcome to Geolang 1.0 -- A DSl for Geometry
+   Type "HELP", "CREDITS", "DESIGN", "COPYRIGHT" for more information.  
+   """
+   print(info)
+         
+   while True:
+      try:
+         code = input('=> ')
+      except EOFError:
+         print("\nThis seems to be the end of input...geolang exiting...\n")
+         import os
+         os._exit(0)
+       
+      try:
+         run_program(code)
+      except Exception as e:
+         print(e)
+
+
+
+if __name__ == '__main__':
+   main()
+
+
